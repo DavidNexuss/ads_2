@@ -85,6 +85,32 @@ std::optional<Point> computeIntersection(const Segment &s1, const Segment &s2) {
   return std::nullopt;
 }
 
+SweepResult findIntersectionsNaive(const Sweepinfo &info) {
+  SweepResult result;
+  for (int i = 0; i < info.segments.size(); i++) {
+    for (int j = i + 1; j < info.segments.size(); j++) {
+      auto intersectionPoint =
+          computeIntersection(info.segments[i], info.segments[j]);
+      if (intersectionPoint) {
+        result.intersectionPOints.push_back(intersectionPoint.value());
+        result.intersectionMaps[i].push_back(j);
+        result.intersectionMaps[j].push_back(i);
+
+        Segment a(info.segments[i].a, intersectionPoint.value());
+        Segment b(info.segments[i].b, intersectionPoint.value());
+        Segment c(info.segments[j].a, intersectionPoint.value());
+        Segment d(info.segments[j].b, intersectionPoint.value());
+
+        result.intersectionSegments.push_back(a);
+        result.intersectionSegments.push_back(b);
+        result.intersectionSegments.push_back(c);
+        result.intersectionSegments.push_back(d);
+      }
+    }
+  }
+  return result;
+}
+
 SweepResult findIntersections(const Sweepinfo &info) {
   SweepResult result;
   std::priority_queue<Event> events;

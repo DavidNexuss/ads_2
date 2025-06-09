@@ -38,3 +38,4 @@ struct SweepResult {
 };
 
 SweepResult findIntersections(const Sweepinfo &info);
+SweepResult findIntersectionsNaive(const Sweepinfo &info);
