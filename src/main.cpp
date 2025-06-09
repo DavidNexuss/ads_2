@@ -35,6 +35,26 @@ Sweepinfo test2(int n) {
   return {.segments = std::move(segments)};
 }
 
+// Same segment
+Sweepinfo testDegenerate1() {
+  Segment a = {{2, 3}, {4, 4}};
+  return {{a, a}};
+}
+
+// Vertex sharing
+Sweepinfo testDegenerate2() {
+  Segment a = {{2, 3}, {4, 4}};
+  Segment b = {{0, 0}, {4, 4}};
+  return {{a, b}};
+}
+
+// Intersection is a point
+Sweepinfo testDegenerate3() {
+  Segment a = {{0, 0}, {4, 0}};
+  Segment b = {{3, 0}, {3, 4}};
+  return {{a, b}};
+}
+
 void cliSolution(const Sweepinfo &info) {
   SweepResult result = findIntersections(info);
 
@@ -72,4 +92,7 @@ void cliSolution(const Sweepinfo &info) {
 int main() {
   cliSolution(test1());
   cliSolution(test2(200));
+  cliSolution(testDegenerate1());
+  cliSolution(testDegenerate2());
+  cliSolution(testDegenerate3());
 }
