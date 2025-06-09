@@ -1,9 +1,14 @@
+
 #include "sweep.hpp"
 #include <algorithm>
 #include <cmath>
+#include <iostream>
+#include <map>
 #include <optional>
 #include <queue>
 #include <set>
+#include <tuple>
+#include <vector>
 
 constexpr float EPS = 1e-6f;
 
@@ -15,16 +20,12 @@ struct Event {
   float x;
   int type; // 0 = segment start, 1 = segment end, 2 = intersection
   Point p;
-  int seg1, seg2; // seg1 is always valid, seg2 is valid only for type == 2
+  int seg1, seg2; // seg1 always valid, seg2 valid only for type == 2
 
-  bool operator>(const Event &other) const {
-    auto retVal = [this](const Event &other) {
-      if (!fequal(x, other.x))
-        return lessThan(x, other.x);
-      return type < other.type;
-    };
-
-    return !retVal(other);
+  bool operator<(const Event &other) const {
+    if (!fequal(x, other.x))
+      return lessThan(other.x, x); // Reverse for min-heap
+    return type > other.type;      // start < intersection < end
   }
 };
 
@@ -35,8 +36,6 @@ struct SweepCompare {
   SweepCompare(float x, const std::vector<Segment> *segs)
       : sweepX(x), segments(segs) {}
 
-  // Less than function for comparing segments at the current sweep line
-  // position
   bool operator()(int i, int j) const {
     const Segment &s1 = (*segments)[i];
     const Segment &s2 = (*segments)[j];
@@ -64,7 +63,7 @@ std::optional<Point> computeIntersection(const Segment &s1, const Segment &s2) {
 
   float denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
   if (fequal(denom, 0))
-    return std::nullopt; // Parallel
+    return std::nullopt;
 
   float px =
       ((x1 * y2 - y1 * x2) * (x3 - x4) - (x1 - x2) * (x3 * y4 - y3 * x4)) /
@@ -88,7 +87,7 @@ std::optional<Point> computeIntersection(const Segment &s1, const Segment &s2) {
 
 SweepResult findIntersections(const Sweepinfo &info) {
   SweepResult result;
-  std::priority_queue<Event, std::vector<Event>, std::greater<>> events;
+  std::priority_queue<Event> events;
 
   const auto &segments = info.segments;
   for (int i = 0; i < segments.size(); ++i) {
@@ -101,14 +100,19 @@ SweepResult findIntersections(const Sweepinfo &info) {
 
   SweepCompare cmp(0, &segments);
   std::set<int, SweepCompare> status(cmp);
-  std::map<int, std::set<int>> intersectMap;
+  std::set<std::tuple<float, int, int>> insertedEvents;
 
   auto tryInsertEvent = [&](int i, int j) {
     if (i > j)
       std::swap(i, j);
     auto inter = computeIntersection(segments[i], segments[j]);
     if (inter) {
-      events.push(Event{inter->x, 2, *inter, i, j});
+      float x = inter->x;
+      auto key = std::make_tuple(x, i, j);
+      if (insertedEvents.count(key))
+        return;
+      insertedEvents.insert(key);
+      events.push(Event{x, 2, *inter, i, j});
     }
   };
 
@@ -119,28 +123,23 @@ SweepResult findIntersections(const Sweepinfo &info) {
     cmp.sweepX = e.x;
 
     if (e.type == 0) {
-      // Insert
       auto it = status.insert(e.seg1).first;
       auto prev = (it == status.begin()) ? status.end() : std::prev(it);
       auto next = std::next(it);
-
       if (prev != status.end())
         tryInsertEvent(*prev, *it);
       if (next != status.end())
         tryInsertEvent(*it, *next);
     } else if (e.type == 1) {
-      // Remove
       auto it = status.find(e.seg1);
-      auto prev = (it == status.begin()) ? status.end() : std::prev(it);
-      auto next = std::next(it);
-
-      if (prev != status.end() && next != status.end())
-        tryInsertEvent(*prev, *next);
-
-      if (it != status.end())
+      if (it != status.end()) {
+        auto prev = (it == status.begin()) ? status.end() : std::prev(it);
+        auto next = std::next(it);
+        if (prev != status.end() && next != status.end())
+          tryInsertEvent(*prev, *next);
         status.erase(it);
+      }
     } else {
-      // Intersection
       result.intersectionPOints.push_back(e.p);
       result.intersectionMaps[e.seg1].push_back(e.seg2);
       result.intersectionMaps[e.seg2].push_back(e.seg1);

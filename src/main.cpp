@@ -1,6 +1,7 @@
 #include "sweep.hpp"
 #include <iomanip>
 #include <iostream>
+#include <random>
 #include <stdlib.h>
 
 Sweepinfo test1() {
@@ -15,6 +16,23 @@ Sweepinfo test1() {
   info.segments.emplace_back(Point{2, 8}, Point{8, 2}); // Segment 3
 
   return info;
+}
+
+// Generate N points randomly and connect them one to one
+Sweepinfo test2(int n) {
+  std::vector<Segment> segments;
+
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  std::uniform_real_distribution<float> dis(0.0f, 100.0f);
+
+  for (int i = 0; i < n; ++i) {
+    Point a{dis(gen), dis(gen)};
+    Point b{dis(gen), dis(gen)};
+    segments.push_back(Segment{a, b});
+  }
+
+  return {.segments = std::move(segments)};
 }
 
 void cliSolution(const Sweepinfo &info) {
@@ -51,4 +69,7 @@ void cliSolution(const Sweepinfo &info) {
   }
 }
 
-int main() { cliSolution(test1()); }
+int main() {
+  cliSolution(test1());
+  cliSolution(test2(200));
+}
