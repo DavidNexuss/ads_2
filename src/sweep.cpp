@@ -10,12 +10,6 @@
 #include <tuple>
 #include <vector>
 
-constexpr float EPS = 1e-6f;
-
-inline bool fequal(float a, float b) { return std::fabs(a - b) < EPS; }
-
-inline bool lessThan(float a, float b) { return a < b - EPS; }
-
 struct Event {
   float x;
   int type; // 0 = segment start, 1 = segment end, 2 = intersection
@@ -85,14 +79,27 @@ std::optional<Point> computeIntersection(const Segment &s1, const Segment &s2) {
   return std::nullopt;
 }
 
+template <typename T> std::vector<T> makeVector(const std::set<T> &objects) {
+  std::vector<T> result;
+  result.reserve(objects.size());
+
+  for (auto &val : objects)
+    result.push_back(val);
+  return result;
+}
+
 SweepResult findIntersectionsNaive(const Sweepinfo &info) {
   SweepResult result;
+  std::set<Point> intersectionPoints;
+  std::set<Segment> intersectionSegments;
+
   for (int i = 0; i < info.segments.size(); i++) {
     for (int j = i + 1; j < info.segments.size(); j++) {
       auto intersectionPoint =
           computeIntersection(info.segments[i], info.segments[j]);
       if (intersectionPoint) {
-        result.intersectionPOints.push_back(intersectionPoint.value());
+        intersectionPoints.insert(intersectionPoint.value());
+
         result.intersectionMaps[i].push_back(j);
         result.intersectionMaps[j].push_back(i);
 
@@ -101,13 +108,15 @@ SweepResult findIntersectionsNaive(const Sweepinfo &info) {
         Segment c(info.segments[j].a, intersectionPoint.value());
         Segment d(info.segments[j].b, intersectionPoint.value());
 
-        result.intersectionSegments.push_back(a);
-        result.intersectionSegments.push_back(b);
-        result.intersectionSegments.push_back(c);
-        result.intersectionSegments.push_back(d);
+        intersectionSegments.insert(a);
+        intersectionSegments.insert(b);
+        intersectionSegments.insert(c);
+        intersectionSegments.insert(d);
       }
     }
   }
+  result.intersectionPOints = makeVector(intersectionPoints);
+  result.intersectionSegments = makeVector(intersectionSegments);
   return result;
 }
 
@@ -194,7 +203,6 @@ SweepResult findIntersections(const Sweepinfo &info) {
 
       status.insert(s2_idx);
       status.insert(s1_idx);
-
       auto itA = status.find(s2_idx);
       auto itB = status.find(s1_idx);
 
@@ -203,8 +211,11 @@ SweepResult findIntersections(const Sweepinfo &info) {
 
       if (before != status.end())
         tryInsertEvent(*before, *itA);
+
+      tryInsertEvent(*itA, *itB);
+
       if (after != status.end())
-        tryInsertEvent(*after, *itB);
+        tryInsertEvent(*itB, *after);
     }
   }
 

@@ -15,5 +15,5 @@ file(GLOB_RECURSE SRC
   src/*.cpp
 )
 
-add_executable(sweep ${SRC})
-target_include_directories(sweep PUBLIC src lib)
+add_executable(mainSweep ${SRC})
+target_include_directories(mainSweep PUBLIC src lib)
