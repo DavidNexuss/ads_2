@@ -1,221 +1,136 @@
-
-#include "sweep.hpp"
-#include <algorithm>
-#include <cmath>
-#include <iostream>
-#include <map>
-#include <optional>
-#include <queue>
 #include <set>
-#include <tuple>
-#include <vector>
+#include <queue>
+#include <optional>
+#include "sweep.hpp"
 
 struct Event {
   float x;
-  int type; // 0 = segment start, 1 = segment end, 2 = intersection
+  int   type;
   Point p;
-  int seg1, seg2; // seg1 always valid, seg2 valid only for type == 2
+  int   segIndexA, segIndexB;
 
-  bool operator<(const Event &other) const {
-    if (!fequal(x, other.x))
-      return lessThan(other.x, x); // Reverse for min-heap
-    return type > other.type;      // start < intersection < end
+  bool operator<(const Event& other) const {
+    if (!fequal(x, other.x)) return x > other.x;
+    return type > other.type;
   }
 };
 
-struct SweepCompare {
-  float sweepX;
-  const std::vector<Segment> *segments;
+struct SegmentCompare {
+  float&                      sweepX;
+  const std::vector<Segment>& segments;
 
-  SweepCompare(float x, const std::vector<Segment> *segs)
-      : sweepX(x), segments(segs) {}
+  SegmentCompare(float& sweepX, const std::vector<Segment>& segments) :
+    sweepX(sweepX), segments(segments) {}
 
   bool operator()(int i, int j) const {
-    const Segment &s1 = (*segments)[i];
-    const Segment &s2 = (*segments)[j];
+    const auto& si = segments[i];
+    const auto& sj = segments[j];
 
-    auto evalY = [](const Segment &s, float x) -> float {
-      if (fequal(s.a.x, s.b.x))
-        return std::min(s.a.y, s.b.y);
+    auto eval = [](const Segment& s, float x) -> float {
+      if (fequal(s.a.x, s.b.x)) return s.a.y;
       float t = (x - s.a.x) / (s.b.x - s.a.x);
       return s.a.y + t * (s.b.y - s.a.y);
     };
 
-    float y1 = evalY(s1, sweepX);
-    float y2 = evalY(s2, sweepX);
-    if (!fequal(y1, y2))
-      return y1 < y2;
-    return i < j;
+    return lessThan(eval(si, sweepX), eval(sj, sweepX));
   }
 };
 
-std::optional<Point> computeIntersection(const Segment &s1, const Segment &s2) {
-  float x1 = s1.a.x, y1 = s1.a.y;
-  float x2 = s1.b.x, y2 = s1.b.y;
-  float x3 = s2.a.x, y3 = s2.a.y;
-  float x4 = s2.b.x, y4 = s2.b.y;
+SweepResult findIntersections(const Sweepinfo& info) {
+  SweepResult                result;
+  std::priority_queue<Event> eventQueue;
+  const auto&                segments = info.segments;
 
-  float denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
-  if (fequal(denom, 0))
-    return std::nullopt;
-
-  float px =
-      ((x1 * y2 - y1 * x2) * (x3 - x4) - (x1 - x2) * (x3 * y4 - y3 * x4)) /
-      denom;
-  float py =
-      ((x1 * y2 - y1 * x2) * (y3 - y4) - (y1 - y2) * (x3 * y4 - y3 * x4)) /
-      denom;
-
-  auto onSegment = [](Point p, Segment s) {
-    return std::min(s.a.x, s.b.x) - EPS <= p.x &&
-           p.x <= std::max(s.a.x, s.b.x) + EPS &&
-           std::min(s.a.y, s.b.y) - EPS <= p.y &&
-           p.y <= std::max(s.a.y, s.b.y) + EPS;
-  };
-
-  Point inter{px, py};
-  if (onSegment(inter, s1) && onSegment(inter, s2))
-    return inter;
-  return std::nullopt;
-}
-
-template <typename T> std::vector<T> makeVector(const std::set<T> &objects) {
-  std::vector<T> result;
-  result.reserve(objects.size());
-
-  for (auto &val : objects)
-    result.push_back(val);
-  return result;
-}
-
-SweepResult findIntersectionsNaive(const Sweepinfo &info) {
-  SweepResult result;
-  std::set<Point> intersectionPoints;
-  std::set<Segment> intersectionSegments;
-
-  for (int i = 0; i < info.segments.size(); i++) {
-    for (int j = i + 1; j < info.segments.size(); j++) {
-      auto intersectionPoint =
-          computeIntersection(info.segments[i], info.segments[j]);
-      if (intersectionPoint) {
-        intersectionPoints.insert(intersectionPoint.value());
-
-        result.intersectionMaps[i].push_back(j);
-        result.intersectionMaps[j].push_back(i);
-
-        Segment a(info.segments[i].a, intersectionPoint.value());
-        Segment b(info.segments[i].b, intersectionPoint.value());
-        Segment c(info.segments[j].a, intersectionPoint.value());
-        Segment d(info.segments[j].b, intersectionPoint.value());
-
-        intersectionSegments.insert(a);
-        intersectionSegments.insert(b);
-        intersectionSegments.insert(c);
-        intersectionSegments.insert(d);
-      }
-    }
-  }
-  result.intersectionPOints = makeVector(intersectionPoints);
-  result.intersectionSegments = makeVector(intersectionSegments);
-  return result;
-}
-
-SweepResult findIntersections(const Sweepinfo &info) {
-  SweepResult result;
-  std::priority_queue<Event> events;
-
-  const auto &segments = info.segments;
-  for (int i = 0; i < segments.size(); ++i) {
-    const auto &s = segments[i];
-    Point left = s.a.x < s.b.x ? s.a : s.b;
-    Point right = s.a.x < s.b.x ? s.b : s.a;
-    events.push(Event{left.x, 0, left, i, -1});
-    events.push(Event{right.x, 1, right, i, -1});
+  for (int i = 0; i < (int)segments.size(); ++i) {
+    Point left = segments[i].a, right = segments[i].b;
+    if (left.x > right.x) std::swap(left, right);
+    eventQueue.push({left.x, 0, left, i, -1});
+    eventQueue.push({right.x, 1, right, i, -1});
   }
 
-  SweepCompare cmp(0, &segments);
-  std::set<int, SweepCompare> status(cmp);
-  std::set<std::tuple<float, int, int>> insertedEvents;
+  float                               sweepX = 0.0f;
+  std::set<int, SegmentCompare>       activeSet(SegmentCompare(sweepX, segments));
+  std::map<std::pair<int, int>, bool> scheduled;
 
-  auto tryInsertEvent = [&](int i, int j) {
-    if (i > j)
-      std::swap(i, j);
-    auto inter = computeIntersection(segments[i], segments[j]);
-    if (inter) {
-      float x = inter->x;
-      auto key = std::make_tuple(x, i, j);
-      if (insertedEvents.count(key))
-        return;
-      insertedEvents.insert(key);
-      events.push(Event{x, 2, *inter, i, j});
+  auto tryAddIntersection = [&](int i, int j) {
+    if (i > j) std::swap(i, j);
+    if (scheduled[{i, j}]) return;
+    auto pt = intersect(segments[i], segments[j]);
+    if (pt.has_value()) {
+      eventQueue.push({pt->x, 2, *pt, i, j});
+      scheduled[{i, j}] = true;
     }
   };
 
-  while (!events.empty()) {
-    Event e = events.top();
-    events.pop();
+  while (!eventQueue.empty()) {
+    Event ev = eventQueue.top();
+    eventQueue.pop();
+    sweepX = ev.x;
 
-    cmp.sweepX = e.x;
-
-    if (e.type == 0) {
-      auto it = status.insert(e.seg1).first;
-      auto prev = (it == status.begin()) ? status.end() : std::prev(it);
+    if (ev.type == 0) {
+      auto it   = activeSet.insert(ev.segIndexA).first;
+      auto prev = (it == activeSet.begin()) ? activeSet.end() : std::prev(it);
       auto next = std::next(it);
-      if (prev != status.end())
-        tryInsertEvent(*prev, *it);
-      if (next != status.end())
-        tryInsertEvent(*it, *next);
-    } else if (e.type == 1) {
-      auto it = status.find(e.seg1);
-      if (it != status.end()) {
-        auto prev = (it == status.begin()) ? status.end() : std::prev(it);
-        auto next = std::next(it);
-        if (prev != status.end() && next != status.end())
-          tryInsertEvent(*prev, *next);
-        status.erase(it);
-      }
+      if (prev != activeSet.end()) tryAddIntersection(*prev, *it);
+      if (next != activeSet.end()) tryAddIntersection(*it, *next);
+    } else if (ev.type == 1) {
+      auto it = activeSet.find(ev.segIndexA);
+      if (it == activeSet.end()) continue;
+      auto prev = (it == activeSet.begin()) ? activeSet.end() : std::prev(it);
+      auto next = std::next(it);
+      if (prev != activeSet.end() && next != activeSet.end())
+        tryAddIntersection(*prev, *next);
+      activeSet.erase(it);
     } else {
-      result.intersectionPOints.push_back(e.p);
-      result.intersectionMaps[e.seg1].push_back(e.seg2);
-      result.intersectionMaps[e.seg2].push_back(e.seg1);
+      /*
+      result.intersectionPOints.insert(ev.p);
+      result.intersectionMaps[ev.segIndexA].insert(ev.segIndexB);
+      result.intersectionMaps[ev.segIndexB].insert(ev.segIndexA);
+      */
+      result.intersectionPOints.insert(ev.p);
+      result.intersectionMaps[ev.segIndexA].insert(ev.segIndexB);
+      result.intersectionMaps[ev.segIndexB].insert(ev.segIndexA);
 
-      Segment s1 = segments[e.seg1];
-      Segment s2 = segments[e.seg2];
+      // Crucial: Reorder segments in the active set
+      int seg1_idx = ev.segIndexA;
+      int seg2_idx = ev.segIndexB;
 
-      result.intersectionSegments.push_back(Segment(s1.a, e.p));
-      result.intersectionSegments.push_back(Segment(e.p, s1.b));
-      result.intersectionSegments.push_back(Segment(s2.a, e.p));
-      result.intersectionSegments.push_back(Segment(e.p, s2.b));
+      // Remove the segments
+      activeSet.erase(seg1_idx);
+      activeSet.erase(seg2_idx);
 
-      auto it1 = status.find(e.seg1);
-      auto it2 = status.find(e.seg2);
-      if (it1 == status.end() || it2 == status.end())
-        continue;
+      // Re-insert them. The comparator (SegmentCompare) will now re-evaluate their
+      // order based on the new sweepX (which is the intersection x-coordinate).
+      // Their relative order will naturally flip if they truly crossed.
+      activeSet.insert(seg1_idx);
+      activeSet.insert(seg2_idx);
 
-      if (cmp(*it2, *it1))
-        std::swap(it1, it2);
+      // After re-inserting, check new neighbors for new intersections
+      // This part can be tricky and requires careful handling to avoid
+      // re-scheduling already processed intersections or adding duplicates.
+      // The standard approach is to check new direct neighbors in the active set.
 
-      int s1_idx = *it1;
-      int s2_idx = *it2;
+      auto it1 = activeSet.find(seg1_idx); // Find new position of seg1
+      auto it2 = activeSet.find(seg2_idx); // Find new position of seg2
 
-      status.erase(it1);
-      status.erase(it2);
+      // Assuming it1 and it2 are now adjacent (which they should be for a simple intersection)
+      // Check seg1 with its new neighbors
+      if (it1 != activeSet.begin()) {
+        tryAddIntersection(*std::prev(it1), *it1);
+      }
+      if (std::next(it1) != activeSet.end()) {
+        tryAddIntersection(*it1, *std::next(it1));
+      }
 
-      status.insert(s2_idx);
-      status.insert(s1_idx);
-      auto itA = status.find(s2_idx);
-      auto itB = status.find(s1_idx);
-
-      auto before = (itA == status.begin()) ? status.end() : std::prev(itA);
-      auto after = std::next(itB);
-
-      if (before != status.end())
-        tryInsertEvent(*before, *itA);
-
-      tryInsertEvent(*itA, *itB);
-
-      if (after != status.end())
-        tryInsertEvent(*itB, *after);
+      // Check seg2 with its new neighbors (be careful not to re-check seg1-seg2 if they are adjacent)
+      if (it2 != activeSet.begin()) {
+        tryAddIntersection(*std::prev(it2), *it2);
+      }
+      if (std::next(it2) != activeSet.end()) {
+        tryAddIntersection(*it2, *std::next(it2));
+      }
+      // A more robust way might be to get the two segments that are now adjacent to
+      // the pair that just flipped and check them.
     }
   }
 
